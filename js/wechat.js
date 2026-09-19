@@ -20951,3 +20951,140 @@ window._wechatCallHelpers = {
   buildWechatInitialAvatarHTML,
   buildCharacterAvatarHTML
 }
+
+
+/* ===== 弯弯补丁：消息朗读 + ElevenLabs 音色 ===== */
+(function () {
+  /* ① 样式 */
+  if (!document.getElementById('kai-spk-style')) {
+    var st = document.createElement('style');
+    st.id = 'kai-spk-style';
+    st.textContent =
+      '.kai-spk{position:absolute;bottom:0;width:24px;height:24px;padding:0;border:0;background:transparent;' +
+      'color:var(--c-hint,#a8a8a8);display:flex;align-items:center;justify-content:center;z-index:5;-webkit-tap-highlight-color:transparent}' +
+      '.kai-spk svg{width:13px;height:13px;fill:currentColor}' +
+      '.kai-spk:active{opacity:.6}' +
+      '.kai-spk.on{color:var(--c-accent,#5b7cff)}' +
+      '.kai-spk.on rect{transform-box:fill-box;transform-origin:center;animation:kaiEq .9s ease-in-out infinite}' +
+      '.kai-spk.on rect:nth-child(2){animation-delay:.15s}' +
+      '.kai-spk.on rect:nth-child(3){animation-delay:.3s}' +
+      '.kai-spk.on rect:nth-child(4){animation-delay:.45s}' +
+      '@keyframes kaiEq{0%,100%{transform:scaleY(.45)}50%{transform:scaleY(1)}}' +
+      '.kai-spk-right{right:-25px}.kai-spk-left{left:-25px}';
+    document.head.appendChild(st);
+  }
+
+  /* ② ElevenLabs：优先用，失败回退 Minimax */
+  var H = window._wechatCallHelpers;
+  if (H && typeof H.callMinimaxTTS === 'function') {
+    var _tts = H.callMinimaxTTS;
+    H.callMinimaxTTS = async function (text, voiceId) {
+      try {
+        var row = await db.config.get('kaiElevenLabs');
+        var cfg = row && row.value;
+        var win = document.getElementById('chat-window');
+        var chatId = win && win.dataset ? win.dataset.chatId : null;
+        var vid = null;
+        if (chatId) {
+          var r2 = await db.config.get('chatVoiceIdEleven_' + chatId);
+          vid = r2 && r2.value;
+        }
+        if (!vid && cfg) vid = cfg.voiceId;
+        if (cfg && cfg.key && vid) {
+          var res = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + vid + '?output_format=mp3_44100_128', {
+            method: 'POST',
+            headers: { 'xi-api-key': cfg.key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, model_id: cfg.model || 'eleven_multilingual_v2' })
+          });
+          if (res.ok) return URL.createObjectURL(await res.blob());
+          console.warn('ElevenLabs ' + res.status + '，回退 Minimax');
+        }
+      } catch (e) { console.warn('ElevenLabs 失败，回退 Minimax', e); }
+      return _tts.apply(this, arguments);
+    };
+  }
+
+  /* ③ 朗读 */
+  var _audio = null, _btn = null, _tick = null;
+  function stopSpeak() {
+    if (_audio) { try { _audio.pause() } catch (e) {} _audio = null }
+    if (_btn) { _btn.classList.remove('on'); _btn = null }
+  }
+  async function speak(el, btn) {
+    var text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    if (text.length > 400) text = text.slice(0, 400);
+    var win = document.getElementById('chat-window');
+    var chatId = win && win.dataset ? win.dataset.chatId : null;
+    var voiceId = null;
+    if (chatId) {
+      var row = await db.config.get('chatVoiceId_' + chatId);
+      voiceId = row && row.value;
+    }
+    stopSpeak();
+    try {
+      var url = await H.callMinimaxTTS(text, voiceId);
+      if (!url) { window.toast && window.toast('合成失败，先去聊天设置填音色'); return }
+      _audio = new Audio(url);
+      _btn = btn;
+      btn.classList.add('on');
+      _audio.addEventListener('ended', stopSpeak);
+      await _audio.play();
+    } catch (e) {
+      console.warn('朗读失败', e);
+      stopSpeak();
+      window.toast && window.toast('朗读失败，点一下屏幕再试');
+    }
+  }
+  var SVG = '<svg viewBox="0 0 24 24"><rect x="2.5" y="10" width="2.6" height="4" rx="1.3"/><rect x="7.8" y="7" width="2.6" height="10" rx="1.3"/><rect x="13.1" y="4.5" width="2.6" height="15" rx="1.3"/><rect x="18.4" y="9" width="2.6" height="6" rx="1.3"/></svg>';
+  var SEL = '[class*="bubble"],[class*="msg-content"],[class*="message-text"],[class*="msg-text"],[class*="chat-text"]';
+
+  function attach() {
+    var win = document.getElementById('chat-window');
+    if (!win) return;
+    var winRight = win.getBoundingClientRect().right;
+    win.querySelectorAll(SEL).forEach(function (el) {
+      if (el.dataset.kaiSpk === '1' || el.querySelector('.kai-spk')) return;
+      var text = (el.innerText || '').trim();
+      if (!text) return;
+      if (/^\[.*\]$/.test(text)) return;
+      el.dataset.kaiSpk = '1';
+      if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+      if (getComputedStyle(el).overflow === 'hidden') el.style.overflow = 'visible';
+      var mine = el.getBoundingClientRect().right > winRight - 60;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'kai-spk ' + (mine ? 'kai-spk-left' : 'kai-spk-right');
+      btn.setAttribute('aria-label', '朗读');
+      btn.innerHTML = SVG;
+      ['pointerdown', 'touchstart', 'mousedown'].forEach(function (t) {
+        btn.addEventListener(t, function (e) { e.stopPropagation() }, { passive: true });
+      });
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation(); e.preventDefault();
+        if (_btn === btn) { stopSpeak(); return }
+        speak(el, btn);
+      });
+      el.appendChild(btn);
+    });
+  }
+  function schedule() {
+    if (_tick) return;
+    _tick = requestAnimationFrame(function () { _tick = null; attach() });
+  }
+
+  /* ④ 每次刷新聊天后挂按钮 */
+  var _refresh = window.refreshChat;
+  if (typeof _refresh === 'function') {
+    window.refreshChat = async function () {
+      var r = await _refresh.apply(this, arguments);
+      setTimeout(attach, 60);
+      return r;
+    };
+  }
+  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('.header-back, .chat-back, .page-header')) stopSpeak();
+  }, true);
+  schedule();
+})();
