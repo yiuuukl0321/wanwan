@@ -149,5 +149,40 @@
   <script src="js/swipe-back.js?v=1.0.0"></script>
   <script src="js/elevenlabs-voice.js?v=1.0.0"></script>
   <script src="js/drag-fix.js?v=1.0.0"></script>
+<!-- 弯弯 · 发完自动回复 -->
+<script>
+(function () {
+  var busy = false;
+  function replyBtn(){ return document.querySelector('.chat-reply-btn, .chat-action-reply'); }
+  function fire(n){
+    var b = replyBtn();
+    if (b && b.offsetParent !== null && !b.disabled) {
+      busy = true; b.click();
+      setTimeout(function(){ busy = false; }, 1500);
+      return;
+    }
+    if (n > 0) setTimeout(function(){ fire(n - 1); }, 300);
+  }
+  function onSend(){
+    if (busy) return;
+    if (!document.querySelector('.chat-window-page')) return;
+    var before = document.querySelectorAll('.msg-row.msg-self').length;
+    setTimeout(function(){
+      var after = document.querySelectorAll('.msg-row.msg-self').length;
+      if (after > before) fire(10);
+    }, 500);
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t && t.closest && t.closest('.chat-action-send')) onSend();
+  }, true);
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    var t = e.target;
+    if (t && t.closest && t.closest('.chat-input')) onSend();
+  }, true);
+})();
+</script>
+
 </body>
 </html>
