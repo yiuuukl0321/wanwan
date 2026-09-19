@@ -1,3 +1,32 @@
+/* me-page-patch */
+(function(){if(window.__mePagePatch)return;window.__mePagePatch=1;
+var st=document.createElement('style');
+st.textContent=['.me-profile-page{padding:16px}','.me-profile-page .card{padding:0 18px;margin-bottom:12px}','.me-profile-page .card:first-child{padding:18px}','.me-hero-top{display:flex;align-items:center;gap:14px}','.me-avatar{width:62px;height:62px;border-radius:50%;overflow:hidden;flex:0 0 auto;background:#f1f1ef}','.me-avatar img{width:100%;height:100%;object-fit:cover}','.me-name{font-size:21px;font-weight:600;letter-spacing:-.4px}','.me-wechat-id{font-size:12px;color:var(--mute);margin-top:4px}','.me-menu button.item{width:100%;background:none;border:0;border-bottom:1px solid var(--line);font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 0;min-height:52px;font-size:14.5px}','.me-menu button.item:last-child{border-bottom:0}','.me-menu button.item em{font-style:normal;color:var(--mute);font-size:11px}','.is-danger{color:#c0392b}','.me-stats{display:none!important}'].join('');
+document.head.appendChild(st);
+function hero(n,a,av,b){var h=['<div class="me-profile-page"><div class="card"><div class="me-hero-top"><div class="me-avatar">'+av+'</div><div class="me-info-stack"><div class="me-name">'+wcEscHtml(n)+'</div><div class="me-wechat-id">@'+wcEscHtml(a)+'</div></div></div>'];if(b)h.push('<div class="sub">'+wcEscHtml(b)+'</div>');return h.join('')}
+window.getWechatSelfProfile=async function(uid){uid=uid||window._wechatUid;if(!uid)return{avatar:'',bio:''};var r=await db.config.get('wechatSelfProfile_'+uid);return{avatar:'',bio:'',...(r&&r.value||{})}};
+window.buildMeTabHTML=function(u,p,posts,av){var n=(u&&(u.nick||u.name))||'未知用户',a=(u&&u.identity&&u.identity.account)||'未设置',b=String(p&&p.bio||'').trim();var h=[hero(n,a,buildWechatSelfAvatarHTML(av,n),b)];h.push('<div class="me-actions"><button class="me-action-btn me-action-primary" id="btn-me-edit-profile" type="button">Edit Profile</button><button class="me-action-btn" id="btn-me-view-profile" type="button">View Profile</button></div></div>');h.push('<div class="card me-menu">');h.push(buildMeMenuRow('btn-wallet-row','fa-solid fa-credit-card','微信支付'));h.push(buildMeMenuRow('btn-favorites-row','fa-solid fa-cube','我的收藏'));h.push(buildMeMenuRow('btn-stickers-row','fa-solid fa-icons','表情'));h.push(buildMeMenuRow('btn-plugin-row','fa-solid fa-heart-circle-bolt','插件'));h.push(buildMeMenuRow('btn-beauty-row','fa-solid fa-wand-sparkles','美化'));h.push('<button class="item me-switch-row" id="btn-account-switch-row" type="button"><span class="is-danger">切换账号</span></button></div></div>');return h.join('')};
+window.showEditProfileStatsSheet=async function(pg){var pr=await getWechatSelfProfile();var sh=wcMakeSheet('<div class="sheet-title">Edit Profile</div><div class="me-stats-editor"><label class="me-profile-field"><span>个性签名</span><textarea class="input-field" id="me-bio-input" rows="4" placeholder="输入个性签名">'+wcEscHtml(pr.bio||'')+'</textarea></label></div><div class="sheet-actions"><button class="btn-pill btn-full" id="btn-save-me-stats">保存</button></div>');wcShowSheet(sh,async function(){await saveWechatSelfProfile({bio:sh.querySelector('#me-bio-input').value.trim()});await loadMeTab(pg,pg.querySelector('#wechat-content'))})};
+window.renderMeTabPage=function(pg,c,html){c.innerHTML=html;function b(id,f){var e=c.querySelector('#'+id);if(e)e.addEventListener('click',f)}if(isWechatRolePhoneMode(pg)){b('btn-role-phone-view-moments',function(){loadWechatRolePhoneMoments(pg)});b('btn-role-phone-wallet',function(){window.openRolePhoneWalletPage&&window.openRolePhoneWalletPage(_wechatRolePhoneSession)});return}b('btn-me-edit-profile',function(){showEditProfileStatsSheet(pg)});b('btn-me-view-profile',function(){openWechatSelfProfilePage(pg)});b('btn-wallet-row',function(){openWechatWalletPage()});b('btn-favorites-row',function(){openWechatFavoritesPage()});b('btn-stickers-row',function(){openStickerLibraryPage()});b('btn-plugin-row',function(){openThoughtPresetsPage()});b('btn-beauty-row',function(){openChatBeautyPresetsPage()});b('btn-account-switch-row',function(){openWechatAccountSwitchPage()})};
+window.buildRolePhoneMeTabStateHTML=async function(){var s=_wechatRolePhoneSession,cid=(s&&s.charId)||_wechatUid,ou=s&&s.ownerUid;var ch=await getWechatDisplayCharacter(cid,ou);if(!ch)return '<div class="list-empty">角色不存在</div>';var mp=await getWechatContactMomentsProfileForOwner(ou,cid),gn=await getPrivateChatGroupNameForOwner(ou,cid);return buildRolePhoneMeTabHTML(ch,mp,gn)};
+window.buildRolePhoneMeTabHTML=function(ch,mp,gn){var n=getWechatDisplayName(ch),a=(ch&&ch.identity&&ch.identity.account)||'未设置',b=String(mp&&mp.bio||'').trim();var h=[hero(n,a,buildCharacterAvatarHTML(ch),b.slice(0,120))];h.push('<div class="me-actions"><button class="me-action-btn me-action-primary" id="btn-role-phone-view-moments" type="button">朋友圈</button><button class="me-action-btn" type="button">Message</button></div></div>');h.push('<div class="card me-menu"><button class="item" id="btn-role-phone-wallet" type="button"><span>微信支付</span><i class="x">›</i></button><button class="item" type="button"><span>我的收藏</span><i class="x">›</i></button></div></div>');return h.join('')};
+window.buildWechatContactProfilePageHTML=function(ch,mp,gn){var n=getWechatDisplayName(ch),a=(ch&&ch.identity&&ch.identity.account)||'未设置',b=String(mp&&mp.bio||'').trim();var h=['<div class="page-header"><button class="header-back" id="btn-wcp-back"><i class="fa fa-angle-left"></i></button><span class="header-title">Personal Profile</span><span class="header-spacer"></span></div>',hero(n,a,buildCharacterAvatarHTML(ch),b.slice(0,120))];h.push('<div class="me-actions"><button class="me-action-btn me-action-primary" id="btn-wcp-moments" type="button">朋友圈</button><button class="me-action-btn" id="btn-wcp-message" type="button">Message</button></div></div>');h.push('<div class="card me-menu"><button class="item" id="wcp-group-row" type="button"><span>分组</span><em id="wcp-group-value">'+wcEscHtml(gn||'')+'</em></button><button class="item" id="wcp-call-records" type="button"><span>通话记录</span><i class="x">›</i></button></div></div>');return h.join('')};
+window.openWechatContactProfilePage=async function(pg,cid){var ch=await getWechatDisplayCharacter(cid);if(!ch)return;var mp=await getWechatContactMomentsProfile(cid),gn=await getPrivateChatGroupName(cid);var p=document.createElement('div');p.id='wechat-contact-profile-page';p.className='full-page wechat-contact-profile-page';if(isWechatRolePhoneMode(pg)){p.classList.add('wechat-role-phone-page');p.dataset.wechatRolePhone='1'}p.dataset.charId=cid;p.innerHTML=buildWechatContactProfilePageHTML(ch,mp,gn);window.openPage(p);p.querySelector('#btn-wcp-back').addEventListener('click',function(){window.closePage('wechat-contact-profile-page')});p.querySelector('#btn-wcp-message').addEventListener('click',async function(){window.closePage('wechat-contact-profile-page');await openPrivateChat(pg,cid,null)});p.querySelector('#wcp-group-row').addEventListener('click',function(){showContactGroupPicker(p,pg,cid)});var cr=p.querySelector('#wcp-call-records');if(cr)cr.addEventListener('click',function(){window.openCallRecordsPage&&window.openCallRecordsPage(cid)});p.querySelector('#btn-wcp-moments').addEventListener('click',function(){openWechatContactMomentsPage(pg,cid)})};
+function sw(r){(r||document).querySelectorAll('.me-stats,.me-stat').forEach(function(e){if(/Followers|Following/i.test(e.textContent||''))e.remove()})}sw(document);
+new MutationObserver(function(ms){ms.forEach(function(m){m.addedNodes&&m.addedNodes.forEach(function(n){if(n.nodeType===1)sw(n)})})}).observe(document.body,{childList:true,subtree:true});
+})();
+/* me-page-patch end */
+
+
+
+
+
+
+
+
+
+
+
 // wechat.js — 微信聊天模块
 // 依赖：db.js 必须先加载
 
@@ -559,13 +588,11 @@ async function getWechatProfile(ownerUid, charId) {
 window.getWechatProfile = getWechatProfile
 
 async function getWechatSelfProfile(uid = _wechatUid) {
-  if (!uid) return { avatar: '', bio: '', followers: 520, following: 162 }
+  
   const row = await db.config.get(getWechatSelfProfileKey(uid))
   return {
     avatar: '',
     bio: '',
-    followers: 520,
-    following: 162,
     ...(row?.value || {})
   }
 }
@@ -10139,26 +10166,9 @@ function buildPhoneSnapshotContactRowHTML(c) {
   `
 }
 
-function getWechatContactProfileStatsKey(ownerUid, charId) {
-  return `wechatContactProfileStats_${ownerUid}_${charId}`
-}
 
-async function getWechatContactProfileStats(charId) {
-  const key = getWechatContactProfileStatsKey(_wechatUid, charId)
-  const row = await db.config.get(key)
-  if (row?.value && Number.isFinite(parseInt(row.value.followers, 10)) && Number.isFinite(parseInt(row.value.following, 10))) {
-    return {
-      followers: parseInt(row.value.followers, 10),
-      following: parseInt(row.value.following, 10)
-    }
-  }
-  const value = {
-    followers: 2 + Math.floor(Math.random() * 999),
-    following: 2 + Math.floor(Math.random() * 999)
-  }
-  await db.config.put({ key, value })
-  return value
-}
+
+async 
 
 const _privateChatCreationLocks = new Map()
 
@@ -10207,7 +10217,6 @@ async function openWechatContactProfilePage(wechatPage, charId) {
   const char = await getWechatDisplayCharacter(charId)
   if (!char) return
   const momentsProfile = await getWechatContactMomentsProfile(charId)
-  const stats = await getWechatContactProfileStats(charId)
   const posts = await countScopedMoments(charId)
   const groupName = await getPrivateChatGroupName(charId)
   const page = document.createElement('div')
@@ -10218,7 +10227,7 @@ async function openWechatContactProfilePage(wechatPage, charId) {
     page.dataset.wechatRolePhone = '1'
   }
   page.dataset.charId = charId
-  page.innerHTML = buildWechatContactProfilePageHTML(char, momentsProfile, stats, posts, groupName)
+  page.innerHTML = buildWechatContactProfilePageHTML(char, momentsProfile, posts, groupName)
   window.openPage(page)
   page.querySelector('#btn-wcp-back').addEventListener('click', () => window.closePage('wechat-contact-profile-page'))
   page.querySelector('#btn-wcp-message').addEventListener('click', async () => {
@@ -10230,11 +10239,11 @@ async function openWechatContactProfilePage(wechatPage, charId) {
     window.openCallRecordsPage?.(charId)
   })
   const openContactMoments = () => openWechatContactMomentsPage(wechatPage, charId)
-  page.querySelector('#btn-wcp-following').addEventListener('click', openContactMoments)
-  page.querySelector('#wcp-following-stat')?.addEventListener('click', openContactMoments)
+  page.querySelector('#btn-wcp-moments').addEventListener('click', openContactMoments)
+  page.querySelector('#wcp-moments-stat')?.addEventListener('click', openContactMoments)
 }
 
-function buildWechatContactProfilePageHTML(char, momentsProfile, stats, posts, groupName) {
+function buildWechatContactProfilePageHTML(char, momentsProfile, posts, groupName) {
   const name = getWechatDisplayName(char)
   const account = char?.identity?.account || '未设置'
   const avatar = buildCharacterAvatarHTML(char)
@@ -10252,17 +10261,12 @@ function buildWechatContactProfilePageHTML(char, momentsProfile, stats, posts, g
           <div class="me-avatar">${avatar}</div>
           <div class="me-info-stack">
             <div class="me-name">${wcEscHtml(name)}</div>
-            <div class="me-stats">
-              <div class="me-stat"><strong>${posts}</strong><span>Posts</span></div>
-              <div class="me-stat"><strong>${stats.followers}</strong><span>Followers</span></div>
-              <button class="me-stat" id="wcp-following-stat" type="button"><strong>${stats.following}</strong><span>Following</span></button>
-            </div>
-          </div>
+                      </div>
         </div>
         <div class="me-wechat-id">@${wcEscHtml(account)}</div>
         ${bioHtml}
         <div class="me-actions">
-          <button class="me-action-btn me-action-primary" id="btn-wcp-following" type="button">Following</button>
+          <button class="me-action-btn me-action-primary" id="btn-wcp-moments" type="button">朋友圈</button>
           <button class="me-action-btn" id="btn-wcp-message" type="button">Message</button>
         </div>
       </div>
@@ -12910,7 +12914,7 @@ function renderMeTabPage(page, container, html) {
   container.innerHTML = html
   if (isWechatRolePhoneMode(page)) {
     container.querySelector('#btn-role-phone-view-moments')?.addEventListener('click', () => loadWechatRolePhoneMoments(page))
-    container.querySelector('#role-phone-following-stat')?.addEventListener('click', () => loadWechatRolePhoneMoments(page))
+    container.querySelector('#role-phone-moments-stat')?.addEventListener('click', () => loadWechatRolePhoneMoments(page))
     container.querySelector('#btn-role-phone-wallet')?.addEventListener('click', () => {
       window.openRolePhoneWalletPage?.(_wechatRolePhoneSession)
     })
@@ -12933,30 +12937,14 @@ async function buildRolePhoneMeTabStateHTML() {
   const char = await getWechatDisplayCharacter(charId, ownerUid)
   if (!char) return '<div class="list-empty">角色不存在</div>'
   const momentsProfile = await getWechatContactMomentsProfileForOwner(ownerUid, charId)
-  const stats = await getWechatContactProfileStatsForOwner(ownerUid, charId)
   const posts = await countScopedMoments(charId, ownerUid)
   const groupName = await getPrivateChatGroupNameForOwner(ownerUid, charId)
-  return buildRolePhoneMeTabHTML(char, momentsProfile, stats, posts, groupName)
+  return buildRolePhoneMeTabHTML(char, momentsProfile, posts, groupName)
 }
 
-async function getWechatContactProfileStatsForOwner(ownerUid, charId) {
-  const key = getWechatContactProfileStatsKey(ownerUid, charId)
-  const row = await db.config.get(key)
-  if (row?.value && Number.isFinite(parseInt(row.value.followers, 10)) && Number.isFinite(parseInt(row.value.following, 10))) {
-    return {
-      followers: parseInt(row.value.followers, 10),
-      following: parseInt(row.value.following, 10)
-    }
-  }
-  const value = {
-    followers: 2 + Math.floor(Math.random() * 999),
-    following: 2 + Math.floor(Math.random() * 999)
-  }
-  await db.config.put({ key, value })
-  return value
-}
+async 
 
-function buildRolePhoneMeTabHTML(char, momentsProfile, stats, posts, groupName) {
+function buildRolePhoneMeTabHTML(char, momentsProfile, posts, groupName) {
   const name = getWechatDisplayName(char)
   const account = char?.identity?.account || '未设置'
   const avatar = buildCharacterAvatarHTML(char)
@@ -12969,17 +12957,12 @@ function buildRolePhoneMeTabHTML(char, momentsProfile, stats, posts, groupName) 
           <div class="me-avatar">${avatar}</div>
           <div class="me-info-stack">
             <div class="me-name">${wcEscHtml(name)}</div>
-            <div class="me-stats">
-              <div class="me-stat"><strong>${posts}</strong><span>Posts</span></div>
-              <div class="me-stat"><strong>${stats.followers}</strong><span>Followers</span></div>
-              <button class="me-stat" id="role-phone-following-stat" type="button"><strong>${stats.following}</strong><span>Following</span></button>
-            </div>
-          </div>
+                      </div>
         </div>
         <div class="me-wechat-id">@${wcEscHtml(account)}</div>
         ${bioHtml}
         <div class="me-actions">
-          <button class="me-action-btn me-action-primary" id="btn-role-phone-view-moments" type="button">Following</button>
+          <button class="me-action-btn me-action-primary" id="btn-role-phone-view-moments" type="button">朋友圈</button>
           <button class="me-action-btn" type="button">Message</button>
         </div>
       </div>
@@ -13003,8 +12986,6 @@ function buildMeTabHTML(user, profile, posts, selfAvatar) {
   const account = user?.identity?.account || '未设置'
   const bio = String(profile?.bio || '').trim()
   const avatar = buildWechatSelfAvatarHTML(selfAvatar, name)
-  const followers = Number.isFinite(parseInt(profile?.followers, 10)) ? parseInt(profile.followers, 10) : 520
-  const following = Number.isFinite(parseInt(profile?.following, 10)) ? parseInt(profile.following, 10) : 162
   const bioHtml = bio ? `<div class="me-bio">${wcEscHtml(bio)}</div>` : ''
   return `
     <div class="me-profile-page">
@@ -13013,20 +12994,7 @@ function buildMeTabHTML(user, profile, posts, selfAvatar) {
           <div class="me-avatar">${avatar}</div>
           <div class="me-info-stack">
             <div class="me-name">${wcEscHtml(name)}</div>
-            <div class="me-stats">
-              <div class="me-stat"><strong>${posts}</strong><span>Posts</span></div>
-              <div class="me-stat"><strong>${followers}</strong><span>Followers</span></div>
-              <div class="me-stat"><strong>${following}</strong><span>Following</span></div>
-            </div>
-          </div>
-        </div>
-        <div class="me-wechat-id">@${wcEscHtml(account)}</div>
-        ${bioHtml}
-        <div class="me-actions">
-          <button class="me-action-btn me-action-primary" id="btn-me-edit-profile" type="button">Edit Profile</button>
-          <button class="me-action-btn" id="btn-me-view-profile" type="button">View Profile</button>
-        </div>
-      </div>
+                  </div>
       <div class="me-menu">
         ${buildMeMenuRow('btn-wallet-row', 'fa-solid fa-credit-card', '微信支付')}
         ${buildMeMenuRow('btn-favorites-row', 'fa-solid fa-cube', '我的收藏')}
@@ -13354,38 +13322,20 @@ async function deleteWechatFavorite(id) {
   await saveWechatFavorites(items.filter(item => item.id !== id))
 }
 
-async function showEditProfileStatsSheet(wechatPage) {
+async async function showEditProfileStatsSheet(wechatPage) {
   const profile = await getWechatSelfProfile()
-  const posts = _wechatUid ? await countScopedMoments(_wechatUid, _wechatUid) : 0
-  const followers = Number.isFinite(parseInt(profile.followers, 10)) ? parseInt(profile.followers, 10) : 520
-  const following = Number.isFinite(parseInt(profile.following, 10)) ? parseInt(profile.following, 10) : 162
-  const sheet = wcMakeSheet(`
-    <div class="sheet-title">Edit Profile</div>
-    <div class="me-stats-editor">
-      <label class="me-profile-field">
-        <span>Posts</span>
-        <input class="input-field" value="${posts}" disabled>
-      </label>
-      <label class="me-profile-field">
-        <span>Followers</span>
-        <input class="input-field" id="me-followers-input" inputmode="numeric" value="${followers}">
-      </label>
-      <label class="me-profile-field">
-        <span>Following</span>
-        <input class="input-field" id="me-following-input" inputmode="numeric" value="${following}">
-      </label>
-    </div>
-    <div class="sheet-actions">
-      <button class="btn-pill btn-full" id="btn-save-me-stats">保存</button>
-    </div>
-  `)
+  const sheet = wcMakeSheet(
+    '<div class="sheet-title">Edit Profile</div>' +
+    '<div class="me-stats-editor"><label class="me-profile-field"><span>个性签名</span>' +
+    '<textarea class="input-field" id="me-bio-input" rows="4" placeholder="输入个性签名">' + wcEscHtml(profile.bio || '') + '</textarea></label></div>' +
+    '<div class="sheet-actions"><button class="btn-pill btn-full" id="btn-save-me-stats">保存</button></div>'
+  )
   wcShowSheet(sheet, async () => {
-    const nextFollowers = Math.max(0, parseInt(sheet.querySelector('#me-followers-input').value, 10) || 0)
-    const nextFollowing = Math.max(0, parseInt(sheet.querySelector('#me-following-input').value, 10) || 0)
-    await saveWechatSelfProfile({ followers: nextFollowers, following: nextFollowing })
+    await saveWechatSelfProfile({ bio: sheet.querySelector('#me-bio-input').value.trim() })
     await loadMeTab(wechatPage, wechatPage.querySelector('#wechat-content'))
   })
 }
+
 
 async function openWechatSelfProfilePage(wechatPage) {
   const profile = await getWechatSelfProfile()
