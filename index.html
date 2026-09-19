@@ -183,6 +183,116 @@
   }, true);
 })();
 </script>
+<!-- 弯弯 · 视觉模型 + ElevenLabs 语音 -->
+<script>
+(function () {
+  var _fetch = window.fetch.bind(window);
+  function get(k){ return db.config.get(k).then(function(r){ return (r && r.value) || null }) }
+  function set(k,v){ return db.config.put({ key: k, value: v }) }
+
+  /* ① 带图的请求自动换成视觉模型 */
+  window.fetch = function (input, init) {
+    try {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var body = init && typeof init.body === 'string' ? init.body : '';
+      if (body && url.indexOf('/chat/completions') !== -1 && body.indexOf('"image_url"') !== -1) {
+        return get('kaiVisionApi').then(function (v) {
+          if (!v || !v.model) return _fetch(input, init);
+          var obj = JSON.parse(body);
+          obj.model = v.model;
+          var next = Object.assign({}, init, { body: JSON.stringify(obj) });
+          next.headers = Object.assign({}, init.headers || {});
+          if (v.key) next.headers['Authorization'] = 'Bearer ' + v.key;
+          var base = String(v.url || '').replace(/\/+$/, '');
+          return _fetch(base ? base + '/chat/completions' : url, next);
+        });
+      }
+    } catch (e) {}
+    return _fetch(input, init);
+  };
+
+  /* ② TTS 优先 ElevenLabs，失败回退 Minimax */
+  var _tts = window.callMinimaxTTS;
+  if (typeof _tts === 'function') {
+    window.callMinimaxTTS = async function (text, voiceId) {
+      try {
+        var e = await get('kaiElevenLabs');
+        var vid = (e && e.voiceId) || voiceId;
+        if (e && e.key && vid) {
+          var res = await _fetch('https://api.elevenlabs.io/v1/text-to-speech/' + vid + '?output_format=mp3_44100_128', {
+            method: 'POST',
+            headers: { 'xi-api-key': e.key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, model_id: e.model || 'eleven_multilingual_v2' })
+          });
+          if (res.ok) return URL.createObjectURL(await res.blob());
+          console.warn('ElevenLabs ' + res.status + '，回退 Minimax');
+        }
+      } catch (err) { console.warn('ElevenLabs 失败，回退 Minimax', err); }
+      return _tts.apply(this, arguments);
+    };
+  }
+
+  /* ③ 设置页注入配置入口 */
+  function panel() {
+    var ov = document.createElement('div');
+    ov.className = 'sheet-overlay show';
+    var m = document.createElement('div');
+    m.className = 'center-modal show';
+    m.innerHTML = '<div class="sheet-title">视觉 & 语音</div>' +
+      '<div style="padding:0 16px;display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto">' +
+      '<input class="input-field" id="kv-url" placeholder="视觉 Base URL（如 https://.../v1）">' +
+      '<input class="input-field" id="kv-key" placeholder="视觉 API Key">' +
+      '<input class="input-field" id="kv-model" placeholder="视觉模型，如 google/gemini-2.0-flash-001">' +
+      '<input class="input-field" id="ke-key" placeholder="ElevenLabs API Key">' +
+      '<input class="input-field" id="ke-voice" placeholder="ElevenLabs Voice ID">' +
+      '<input class="input-field" id="ke-model" placeholder="ElevenLabs 模型，默认 eleven_multilingual_v2">' +
+      '</div><div class="sheet-actions"><button class="btn-pill btn-full" id="k-save">保存</button></div>';
+    document.body.appendChild(ov); document.body.appendChild(m);
+    Promise.all([get('kaiVisionApi'), get('kaiElevenLabs')]).then(function (r) {
+      var v = r[0] || {}, e = r[1] || {};
+      m.querySelector('#kv-url').value = v.url || '';
+      m.querySelector('#kv-key').value = v.key || '';
+      m.querySelector('#kv-model').value = v.model || '';
+      m.querySelector('#ke-key').value = e.key || '';
+      m.querySelector('#ke-voice').value = e.voiceId || '';
+      m.querySelector('#ke-model').value = e.model || '';
+    });
+    function close(){ ov.remove(); m.remove() }
+    ov.addEventListener('click', close);
+    m.querySelector('#k-save').addEventListener('click', async function () {
+      await set('kaiVisionApi', {
+        url: m.querySelector('#kv-url').value.trim(),
+        key: m.querySelector('#kv-key').value.trim(),
+        model: m.querySelector('#kv-model').value.trim()
+      });
+      await set('kaiElevenLabs', {
+        key: m.querySelector('#ke-key').value.trim(),
+        voiceId: m.querySelector('#ke-voice').value.trim(),
+        model: m.querySelector('#ke-model').value.trim()
+      });
+      window.toast('已保存'); close();
+    });
+  }
+  function injectRow() {
+    if (document.getElementById('kai-media-row')) return;
+    var rows = document.querySelectorAll('.list-row, .setting-row');
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].textContent.indexOf('Minimax') === -1) continue;
+      var row = rows[i].cloneNode(true);
+      row.id = 'kai-media-row';
+      row.querySelectorAll('[id]').forEach(function (el) { el.removeAttribute('id') });
+      var l = row.querySelector('.row-label'); if (l) l.textContent = '视觉模型 / ElevenLabs';
+      var s = row.querySelector('.row-sub'); if (s) s.textContent = '读图模型 + 语音合成';
+      row.addEventListener('click', panel);
+      rows[i].parentNode.insertBefore(row, rows[i].nextSibling);
+      return;
+    }
+  }
+  new MutationObserver(injectRow).observe(document.body, { childList: true, subtree: true });
+  injectRow();
+})();
+</script>
+
 
 </body>
 </html>
