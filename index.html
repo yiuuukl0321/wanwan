@@ -368,6 +368,91 @@
   injectVoiceSection();
 })();
 </script>
+<!-- 弯弯 · 消息朗读按钮 -->
+<style>
+.kai-speak-btn{position:absolute;right:5px;bottom:3px;width:18px;height:18px;padding:0;
+  border:0;background:transparent;color:var(--c-hint,#9a9a9a);font-size:11px;line-height:18px;
+  opacity:.6;z-index:3;cursor:pointer}
+.kai-speak-btn:active{opacity:1}
+.kai-speak-btn.is-playing{color:var(--c-accent,#5b7cff);opacity:1}
+</style>
+<script>
+(function () {
+  var _audio = null, _btn = null;
+  function toast(m){ if (window.toast) window.toast(m) }
+
+  function stopSpeak() {
+    if (_audio) { try { _audio.pause() } catch (e) {} _audio = null }
+    if (_btn) { _btn.classList.remove('is-playing'); _btn = null }
+  }
+
+  async function speak(el, btn) {
+    var text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    if (text.length > 400) text = text.slice(0, 400);
+
+    var H = window._wechatCallHelpers || {};
+    var fn = (typeof H.callMinimaxTTS === 'function') ? H.callMinimaxTTS : window.callMinimaxTTS;
+    if (typeof fn !== 'function') { toast('语音合成不可用'); return }
+
+    var win = document.getElementById('chat-window');
+    var chatId = win && win.dataset ? win.dataset.chatId : null;
+    var voiceId = null;
+    if (chatId) {
+      var row = await db.config.get('chatVoiceId_' + chatId);
+      voiceId = row && row.value;
+    }
+
+    stopSpeak();
+    try {
+      var url = await fn(text, voiceId);
+      if (!url) { toast('合成失败，先去聊天设置填音色'); return }
+      _audio = new Audio(url);
+      _btn = btn;
+      if (btn) btn.classList.add('is-playing');
+      _audio.addEventListener('ended', stopSpeak);
+      await _audio.play();
+    } catch (e) {
+      console.warn('朗读失败', e);
+      stopSpeak();
+      toast('朗读失败，点一下屏幕再试');
+    }
+  }
+
+  var SEL = '[class*="bubble"],[class*="msg-content"],[class*="message-text"],[class*="msg-text"],[class*="chat-text"]';
+
+  function attach() {
+    var win = document.getElementById('chat-window');
+    if (!win) return;
+    win.querySelectorAll(SEL).forEach(function (el) {
+      if (el.dataset.kaiSpk === '1') return;
+      var text = (el.innerText || '').trim();
+      if (!text || text.length < 1) return;
+      if (el.closest('.kai-speak-btn')) return;
+      el.dataset.kaiSpk = '1';
+      if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'kai-speak-btn';
+      btn.setAttribute('aria-label', '朗读');
+      btn.innerHTML = '<i class="fa-solid fa-volume-high"></i>';
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation(); e.preventDefault();
+        if (_btn === btn) { stopSpeak(); return }
+        speak(el, btn);
+      });
+      el.appendChild(btn);
+    });
+  }
+
+  new MutationObserver(attach).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('.header-back, .chat-back, .page-header')) stopSpeak();
+  }, true);
+  attach();
+})();
+</script>
+
 
 </body>
 </html>
