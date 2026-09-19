@@ -17,16 +17,6 @@ new MutationObserver(function(ms){ms.forEach(function(m){m.addedNodes&&m.addedNo
 })();
 /* me-page-patch end */
 
-
-
-
-
-
-
-
-
-
-
 // wechat.js — 微信聊天模块
 // 依赖：db.js 必须先加载
 
