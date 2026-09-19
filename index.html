@@ -187,10 +187,21 @@
 <script>
 (function () {
   var _fetch = window.fetch.bind(window);
+  var _chatId = null;
+
   function get(k){ return db.config.get(k).then(function(r){ return (r && r.value) || null }) }
   function set(k,v){ return db.config.put({ key: k, value: v }) }
+  function toast(m){ if (window.toast) window.toast(m) }
+  function pick(sel){ var el = document.querySelector(sel); return el ? el.dataset : null }
 
-  /* ① 带图的请求自动换成视觉模型 */
+  function currentChatId() {
+    if (_chatId) return _chatId;
+    var d = pick('#call-page') || pick('#chat-window');
+    if (!d) return null;
+    return d.chatId || d.callChatId || d.chatid || null;
+  }
+
+  /* ========== 1. 带图的请求自动换成视觉模型 ========== */
   window.fetch = function (input, init) {
     try {
       var url = typeof input === 'string' ? input : (input && input.url) || '';
@@ -211,18 +222,25 @@
     return _fetch(input, init);
   };
 
-  /* ② TTS 优先 ElevenLabs，失败回退 Minimax */
-  var _tts = window.callMinimaxTTS;
-  if (typeof _tts === 'function') {
-    window.callMinimaxTTS = async function (text, voiceId) {
+  /* ========== 2. TTS：优先 ElevenLabs，失败回退 Minimax ========== */
+  function installTTS() {
+    var H = window._wechatCallHelpers;
+    var _tts = (H && typeof H.callMinimaxTTS === 'function')
+      ? H.callMinimaxTTS
+      : window.callMinimaxTTS;
+    if (typeof _tts !== 'function') return false;
+
+    var wrapped = async function (text, voiceId) {
       try {
-        var e = await get('kaiElevenLabs');
-        var vid = (e && e.voiceId) || voiceId;
-        if (e && e.key && vid) {
+        var cfg = await get('kaiElevenLabs');
+        var cid = currentChatId();
+        var vid = cid ? await get('chatVoiceIdEleven_' + cid) : null;
+        if (!vid && cfg) vid = cfg.voiceId;
+        if (cfg && cfg.key && vid) {
           var res = await _fetch('https://api.elevenlabs.io/v1/text-to-speech/' + vid + '?output_format=mp3_44100_128', {
             method: 'POST',
-            headers: { 'xi-api-key': e.key, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, model_id: e.model || 'eleven_multilingual_v2' })
+            headers: { 'xi-api-key': cfg.key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, model_id: cfg.model || 'eleven_multilingual_v2' })
           });
           if (res.ok) return URL.createObjectURL(await res.blob());
           console.warn('ElevenLabs ' + res.status + '，回退 Minimax');
@@ -230,9 +248,26 @@
       } catch (err) { console.warn('ElevenLabs 失败，回退 Minimax', err); }
       return _tts.apply(this, arguments);
     };
+
+    if (H) H.callMinimaxTTS = wrapped;
+    if (typeof window.callMinimaxTTS === 'function') window.callMinimaxTTS = wrapped;
+    return true;
+  }
+  if (!installTTS()) {
+    var t = setInterval(function () { if (installTTS()) clearInterval(t) }, 800);
   }
 
-  /* ③ 设置页注入配置入口 */
+  /* 通话时抓住当前 chatId，才能知道用哪个角色的音色 */
+  ['startVoiceCall', 'startVideoCall'].forEach(function (name) {
+    var fn = window[name];
+    if (typeof fn !== 'function') return;
+    window[name] = function (chatId, charId, initiator) {
+      _chatId = chatId;
+      return fn.apply(this, arguments);
+    };
+  });
+
+  /* ========== 3. 设置页新增「视觉模型 / ElevenLabs」入口 ========== */
   function panel() {
     var ov = document.createElement('div');
     ov.className = 'sheet-overlay show';
@@ -244,7 +279,7 @@
       '<input class="input-field" id="kv-key" placeholder="视觉 API Key">' +
       '<input class="input-field" id="kv-model" placeholder="视觉模型，如 google/gemini-2.0-flash-001">' +
       '<input class="input-field" id="ke-key" placeholder="ElevenLabs API Key">' +
-      '<input class="input-field" id="ke-voice" placeholder="ElevenLabs Voice ID">' +
+      '<input class="input-field" id="ke-voice" placeholder="ElevenLabs 默认 Voice ID">' +
       '<input class="input-field" id="ke-model" placeholder="ElevenLabs 模型，默认 eleven_multilingual_v2">' +
       '</div><div class="sheet-actions"><button class="btn-pill btn-full" id="k-save">保存</button></div>';
     document.body.appendChild(ov); document.body.appendChild(m);
@@ -270,10 +305,11 @@
         voiceId: m.querySelector('#ke-voice').value.trim(),
         model: m.querySelector('#ke-model').value.trim()
       });
-      window.toast('已保存'); close();
+      toast('已保存'); close();
     });
   }
-  function injectRow() {
+
+  function injectSettingRow() {
     if (document.getElementById('kai-media-row')) return;
     var rows = document.querySelectorAll('.list-row, .setting-row');
     for (var i = 0; i < rows.length; i++) {
@@ -288,11 +324,50 @@
       return;
     }
   }
-  new MutationObserver(injectRow).observe(document.body, { childList: true, subtree: true });
-  injectRow();
+
+  /* ========== 4. 聊天设置里新增「ElevenLabs 语音」音色栏 ========== */
+  function injectVoiceSection() {
+    if (document.getElementById('cs-eleven-voice-id')) return;
+    var mini = document.getElementById('cs-voice-id');
+    if (!mini) return;
+    var sec = mini.closest('.cs-section');
+    if (!sec) return;
+    var page = mini.closest('.full-page') || document;
+    var chatId = (page.dataset && page.dataset.chatId) || currentChatId();
+    if (!chatId) return;
+    _chatId = chatId;
+
+    var clone = sec.cloneNode(true);
+    clone.querySelectorAll('[id]').forEach(function (el) { el.removeAttribute('id') });
+    var label = clone.querySelector('.cs-section-label');
+    if (label) label.textContent = 'ElevenLabs 语音';
+    var sub = clone.querySelector('.cs-section-sub');
+    if (sub) sub.textContent = '填入 ElevenLabs Voice ID，优先用它；留空回退 Minimax';
+    var input = clone.querySelector('input');
+    if (!input) return;
+    input.id = 'cs-eleven-voice-id';
+    input.placeholder = '输入 ElevenLabs Voice ID';
+    get('chatVoiceIdEleven_' + chatId).then(function (v) { input.value = v || '' });
+    input.addEventListener('change', function () {
+      var val = input.value.trim();
+      if (!val) {
+        db.config.delete('chatVoiceIdEleven_' + chatId);
+        toast('已清空，这个角色回退 Minimax');
+        return;
+      }
+      set('chatVoiceIdEleven_' + chatId, val).then(function () {
+        toast('ElevenLabs 音色已保存');
+      });
+    });
+    sec.parentNode.insertBefore(clone, sec.nextSibling);
+  }
+
+  new MutationObserver(function () { injectSettingRow(); injectVoiceSection(); })
+    .observe(document.body, { childList: true, subtree: true });
+  injectSettingRow();
+  injectVoiceSection();
 })();
 </script>
-
 
 </body>
 </html>
